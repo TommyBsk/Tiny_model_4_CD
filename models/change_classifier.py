@@ -21,12 +21,12 @@ class ChangeClassifier(Module):
         )
 
         # Initialize mixing blocks:
-        self._first_mix = MixingMaskAttentionBlock(6, 3, [3, 10, 5], [10, 5, 1])
+        self._first_mix = MixingMaskAttentionBlock([3, 10, 5], [10, 5, 1])
         self._mixing_mask = ModuleList(
             [
-                MixingMaskAttentionBlock(48, 24, [24, 12, 6], [12, 6, 1]),
-                MixingMaskAttentionBlock(64, 32, [32, 16, 8], [16, 8, 1]),
-                MixingBlock(112, 56),
+                MixingMaskAttentionBlock([24, 12, 6], [12, 6, 1]),
+                MixingMaskAttentionBlock([32, 16, 8], [16, 8, 1]),
+                MixingMaskAttentionBlock([56], [56]),
             ]
         )
 
@@ -42,17 +42,17 @@ class ChangeClassifier(Module):
         # Final classification layer:
         self._classify = PixelwiseLinear([32, 16, 8], [16, 8, 1], Sigmoid())
 
-    def forward(self, ref: Tensor, test: Tensor) -> Tensor:
-        features = self._encode(ref, test)
+    def forward(self, x: Tensor) -> Tensor:
+        features = self._encode(x)
         latents = self._decode(features)
         return self._classify(latents)
 
-    def _encode(self, ref, test) -> List[Tensor]:
-        features = [self._first_mix(ref, test)]
+    def _encode(self, x) -> List[Tensor]:
+        features = [self._first_mix(x)]
         for num, layer in enumerate(self._backbone):
-            ref, test = layer(ref), layer(test)
+            x = layer(x)
             if num != 0:
-                features.append(self._mixing_mask[num - 1](ref, test))
+                features.append(self._mixing_mask[num - 1](x))
         return features
 
     def _decode(self, features) -> Tensor:

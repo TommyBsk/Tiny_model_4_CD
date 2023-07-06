@@ -80,14 +80,13 @@ def train(
 
     tool4metric = ConfuseMatrixMeter(n_class=2)
 
-    def evaluate(reference, testimg, mask):
+    def evaluate(reference, mask):
         # All the tensors on the device:
         reference = reference.to(device).float()
-        testimg = testimg.to(device).float()
         mask = mask.to(device).float()
 
         # Evaluating the model:
-        generated_mask = model(reference, testimg).squeeze(1)
+        generated_mask = model(reference).squeeze(1)
 
         # Loss gradient descend step:
         it_loss = criterion(generated_mask, mask)
@@ -105,12 +104,12 @@ def train(
         print("Epoch {}".format(epc))
         model.train()
         epoch_loss = 0.0
-        for (reference, testimg), mask in dataset_train:
+        for reference, mask in dataset_train:
             # Reset the gradients:
             optimizer.zero_grad()
 
             # Loss gradient descend step:
-            it_loss = evaluate(reference, testimg, mask)
+            it_loss = evaluate(reference, mask)
             it_loss.backward()
             optimizer.step()
 
@@ -152,9 +151,8 @@ def train(
         epoch_loss_eval = 0.0
         tool4metric.clear()
         with torch.no_grad():
-            for (reference, testimg), mask in dataset_val:
-                epoch_loss_eval += evaluate(reference,
-                                            testimg, mask).to("cpu").numpy()
+            for reference, mask in dataset_val:
+                epoch_loss_eval += evaluate(reference, mask).to("cpu").numpy()
 
         epoch_loss_eval /= len(dataset_val)
         print("Validation phase summary")
@@ -197,8 +195,8 @@ def run():
     writer = SummaryWriter(log_dir=args.log_path)
 
     # Inizialitazion of dataset and dataloader:
-    trainingdata = dtset.MyDataset(args.datapath, "train")
-    validationdata = dtset.MyDataset(args.datapath, "val")
+    trainingdata = dtset.MyDataset(args.datapath, "data/train.txt", "train")
+    validationdata = dtset.MyDataset(args.datapath, "data/val.txt", "val")
     data_loader_training = DataLoader(trainingdata, batch_size=8, shuffle=True)
     data_loader_val = DataLoader(validationdata, batch_size=8, shuffle=True)
 
@@ -256,7 +254,7 @@ def run():
         scheduler,
         args.log_path,
         writer,
-        epochs=100,
+        epochs=8,
         save_after=1,
         device=device
     )
