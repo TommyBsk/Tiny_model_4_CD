@@ -254,7 +254,7 @@ def run():
         scheduler,
         args.log_path,
         writer,
-        epochs=8,
+        epochs=60,
         save_after=1,
         device=device
     )

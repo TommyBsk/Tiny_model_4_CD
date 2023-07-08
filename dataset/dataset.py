@@ -21,8 +21,8 @@ class MyDataset(Dataset, Sized):
     
         # Store the path data path + mode (train,val,test):
         self._mode = mode
-        self._img_path = join(data_path,"dataBin")
-        self._mask_path = join(data_path,"segBin")
+        self._img_path = join(data_path,"data")
+        self._mask_path = join(data_path,"seg")
 
         # In all the dirs, the files share the same names:
         self._list_images = self._read_images_list(txt_data)
@@ -32,6 +32,8 @@ class MyDataset(Dataset, Sized):
         if mode == 'train':
             self._augmentation = _create_shared_augmentation()
             self._aberration = _create_aberration_augmentation()
+        else:
+            self._resize_eval_images = _resize_eval_images()
         
         # Initialize normalization:
         self._normalize = Normalize(mean=[0.45],
@@ -52,6 +54,8 @@ class MyDataset(Dataset, Sized):
         # Data augmentation in case of training:
         if self._mode == "train":
             x_img, x_mask = self._augment(x_img, x_mask)
+        else:
+            x_img, x_mask = self._resize_eval(x_img, x_mask)
 
         # Trasform data from HWC to CWH:
         # x_img, x_test, x_mask = self._to_tensors(x_img, x_test, x_mask)
@@ -79,6 +83,16 @@ class MyDataset(Dataset, Sized):
 
         return x_img, x_mask
     
+    def _resize_eval(
+        self, x_img: np.ndarray, x_mask: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        # Resize image and mask:
+        transformed = self._resize_eval_images(image=x_img, x_mask0=x_mask)
+        x_img = transformed["image"]
+        x_mask = transformed["x_mask0"]
+
+        return x_img, x_mask
+    
     def _to_tensors(
         self, x_img: np.ndarray, x_mask: np.ndarray
     ) -> Tuple[Tensor, Tensor, Tensor]:
@@ -91,8 +105,17 @@ class MyDataset(Dataset, Sized):
 def _create_shared_augmentation():
     return alb.Compose(
         [
+            alb.Resize(256, 256),
             alb.Flip(p=0.5),
             alb.Rotate(limit=5, p=0.5),
+        ],
+        additional_targets={"image0": "image", "x_mask0": "mask"},
+    )
+
+def _resize_eval_images():
+    return alb.Compose(
+        [
+            alb.Resize(256, 256)
         ],
         additional_targets={"image0": "image", "x_mask0": "mask"},
     )
