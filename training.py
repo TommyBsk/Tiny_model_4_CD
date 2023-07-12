@@ -3,7 +3,7 @@ import os
 import shutil
 
 
-import dataset.dataset as dtset
+from dataset.dataset import MyDataset
 import torch
 import numpy as np
 import random
@@ -11,6 +11,7 @@ from metrics.metric_tool import ConfuseMatrixMeter
 from models.change_classifier import ChangeClassifier as Model
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from matplotlib import pyplot as plt
 
 
 def parse_arguments():
@@ -104,7 +105,9 @@ def train(
         print("Epoch {}".format(epc))
         model.train()
         epoch_loss = 0.0
-        for reference, mask in dataset_train:
+        for data in dataset_train:
+            reference = data["image"]
+            mask = data["mask"]
             # Reset the gradients:
             optimizer.zero_grad()
 
@@ -151,7 +154,9 @@ def train(
         epoch_loss_eval = 0.0
         tool4metric.clear()
         with torch.no_grad():
-            for reference, mask in dataset_val:
+            for data in dataset_val:
+                reference = data["image"]
+                mask = data["mask"]
                 epoch_loss_eval += evaluate(reference, mask).to("cpu").numpy()
 
         epoch_loss_eval /= len(dataset_val)
@@ -180,6 +185,50 @@ def train(
         # scheduler step
         scheduler.step()
 
+def output_image(
+    dataset_test,
+    model,
+    device,
+    logpath
+):
+    model = model.to(device)
+    model.eval()
+    with torch.no_grad():
+        for data in dataset_test:
+            reference = data["image"]
+            mask = data["mask"]
+            # All the tensors on the device:
+            reference = reference.to(device).float()
+            mask = mask.to(device).float()
+
+            # Evaluating the model:
+            generated_mask = model(reference).squeeze(1)
+
+            # Binarize mask
+            bin_genmask = (generated_mask.to("cpu") >
+                        0.5).detach().numpy().astype(int)
+            mask = mask.to("cpu").numpy().astype(int)
+            columns = 3
+            rows = 3
+            j = 0
+            fig = plt.figure(figsize=(12, 16))
+            for i in range(columns * rows)[::3]:
+                img = reference[j,0,:,:].squeeze().cpu()
+                col1 = fig.add_subplot(rows, columns, i + 1)
+                plt.imshow(img, cmap="gray")
+                col2 = fig.add_subplot(rows, columns, i + 2)
+                plt.imshow(mask[j], cmap="gray")
+                col3 = fig.add_subplot(rows, columns, i + 3)
+                plt.imshow(bin_genmask[j], cmap="gray")
+                j += 1
+                if i == 0:
+                    col1.title.set_text("Data")
+                    col2.title.set_text("Ground Truth")
+                    col3.title.set_text("Prediction")
+            plt.suptitle(f"Predictions", fontsize=16)
+            plt_out_pth = os.path.join(logpath, "prediction_image.png")
+            plt.savefig(plt_out_pth, dpi=300)
+
 
 def run():
 
@@ -195,10 +244,13 @@ def run():
     writer = SummaryWriter(log_dir=args.log_path)
 
     # Inizialitazion of dataset and dataloader:
-    trainingdata = dtset.MyDataset(args.datapath, "data/train.txt", "train")
-    validationdata = dtset.MyDataset(args.datapath, "data/val.txt", "val")
+    trainingdata = MyDataset(args.datapath, "data/train.txt", "train")
+    validationdata = MyDataset(args.datapath, "data/val.txt", "val")
+    testingdata = MyDataset(args.datapath, "data/test.txt", "val")
     data_loader_training = DataLoader(trainingdata, batch_size=8, shuffle=True)
     data_loader_val = DataLoader(validationdata, batch_size=8, shuffle=True)
+    data_loader_testing = DataLoader(testingdata, batch_size=3, shuffle=False)
+
 
     # device setting for training
     if torch.cuda.is_available():
@@ -254,11 +306,12 @@ def run():
         scheduler,
         args.log_path,
         writer,
-        epochs=8,
+        epochs=1,
         save_after=1,
         device=device
     )
     writer.close()
+    output_image(data_loader_testing, model, device, args.log_path)
 
 
 if __name__ == "__main__":

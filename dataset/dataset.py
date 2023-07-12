@@ -56,7 +56,8 @@ class MyDataset(Dataset, Sized):
         # Trasform data from HWC to CWH:
         # x_img, x_test, x_mask = self._to_tensors(x_img, x_test, x_mask)
         x_img, x_mask = self._to_tensors(np.expand_dims(x_img, axis=2),x_mask)
-        return x_img.repeat(3,1,1), x_mask
+        
+        return {"image":x_img.repeat(3,1,1),"mask":x_mask,"img_name":imgname}
 
     def __len__(self):
         return len(self._list_images)

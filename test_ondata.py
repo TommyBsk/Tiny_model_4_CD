@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader
 from metrics.metric_tool import ConfuseMatrixMeter
 from models.change_classifier import ChangeClassifier
 import argparse
+from os.path import join
+import matplotlib.pyplot as plt
 
 def parse_arguments():
     # Argument Parser creation
@@ -15,12 +17,16 @@ def parse_arguments():
         "--datapath",
         type=str,
         help="data path",
-        default="/home/codegoni/aerial/WHU-CD-256/WHU-CD-256",
     )
     parser.add_argument(
         "--modelpath",
         type=str,
         help="model path",
+    )
+    parser.add_argument(
+        "--save_pred_path",
+        type=str,
+        help="save predictions path",
     )
 
     parsed_arguments = parser.parse_args()
@@ -37,7 +43,7 @@ if __name__ == "__main__":
 
     # Initialisation of the dataset
     data_path = args.datapath 
-    dataset = MyDataset(data_path, "test")
+    dataset = MyDataset(data_path, "data/test.txt", "test")
     test_loader = DataLoader(dataset, batch_size=1)
 
     # Initialisation of the model and print model stat
@@ -64,13 +70,15 @@ if __name__ == "__main__":
     criterion = torch.nn.BCELoss()
 
     with torch.no_grad():
-        for (reference, testimg), mask in tqdm.tqdm(test_loader):
+        for data in tqdm.tqdm(test_loader):
+            reference = data["image"]
+            mask = data["mask"]
+            img_name = data["img_name"]
             reference = reference.to(device).float()
-            testimg = testimg.to(device).float()
             mask = mask.float()
 
             # pass refence and test in the model
-            generated_mask = model(reference, testimg).squeeze(1)
+            generated_mask = model(reference).squeeze(1)
             
             # compute the loss for the batch and backpropagate
             generated_mask = generated_mask.to("cpu")
@@ -82,6 +90,13 @@ if __name__ == "__main__":
             mask = mask.numpy()
             mask = mask.astype(int)
             tool_metric.update_cm(pr=bin_genmask, gt=mask)
+            
+            # save prediction to folder
+            # TODO: check 
+            plt.imsave(fname=join(args.save_pred_path,img_name))
+            #
+            if "Z" in img_name:
+                volume_z[:,:,index]
 
         bce_loss /= len(test_loader)
         print("Test summary")
@@ -90,3 +105,4 @@ if __name__ == "__main__":
 
         scores_dictionary = tool_metric.get_scores()
         print(scores_dictionary)
+
