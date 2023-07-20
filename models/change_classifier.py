@@ -1,6 +1,6 @@
 from typing import List
 import torchvision
-from models.layers import MixingMaskAttentionBlock, PixelwiseLinear, UpMask, MixingBlock
+from models.layers import MixingMaskAttentionBlock, PixelwiseLinear, UpMask
 from torch import Tensor
 from torch.nn import Module, ModuleList, Sigmoid
 
@@ -21,12 +21,12 @@ class ChangeClassifier(Module):
         )
 
         # Initialize mixing blocks:
-        self._first_mix = MixingMaskAttentionBlock([3, 10, 5], [10, 5, 1])
+        self._first_mix = PixelwiseLinear([3, 10, 5], [10, 5, 1])
         self._mixing_mask = ModuleList(
             [
-                MixingMaskAttentionBlock([24, 12, 6], [12, 6, 1]),
-                MixingMaskAttentionBlock([32, 16, 8], [16, 8, 1]),
-                MixingMaskAttentionBlock([56], [56]),
+                PixelwiseLinear([24, 12, 6], [12, 6, 1]),
+                PixelwiseLinear([32, 16, 8], [16, 8, 1]),
+                PixelwiseLinear([56], [56]),
             ]
         )
 
