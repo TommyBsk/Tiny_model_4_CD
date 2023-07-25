@@ -1,4 +1,5 @@
 import torch
+from torchmetrics.classification import MulticlassF1Score, MulticlassJaccardIndex
 from dataset.dataset import MyDataset
 import tqdm
 from torch.utils.data import DataLoader
@@ -8,6 +9,8 @@ import argparse
 from os.path import join
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
+import json
 
 MEAN = 0.45
 STD = 0.225
@@ -91,6 +94,9 @@ def main():
     # loop to evaluate the model and print the metrics
     bce_loss = 0.0
     criterion = torch.nn.BCELoss()
+    
+    # dict metrichs 
+    dict_metrichs = {}
 
     with torch.no_grad():
         for data in tqdm.tqdm(test_loader):
@@ -113,6 +119,16 @@ def main():
             mask = mask.numpy()
             mask = mask.astype(int)
             tool_metric.update_cm(pr=bin_genmask, gt=mask)
+            
+            # update dict metrichs 
+            f1score = MulticlassF1Score(num_classes=2, average=None)
+            jaccardIndex = MulticlassJaccardIndex(num_classes=2, average=None)
+            dict_metrichs[img_name[0]] = (f1score(torch.from_numpy(bin_genmask), torch.from_numpy(mask))[1].tolist(), jaccardIndex(torch.from_numpy(bin_genmask), torch.from_numpy(mask))[1].tolist() )
+            
+            # save output masks
+            im = Image.fromarray((bin_genmask[0] * 255).astype(np.uint8))
+            im.save(join(join(args.save_pred_path, "output_mask"),img_name[0]))
+            
 
             # Preparing the masks:
             ct_to_plot = denormalize_img(reference[0].detach().cpu().permute(1,2,0).numpy())
@@ -136,7 +152,11 @@ def main():
             axs[1,1].set_title("Difference mask")
             #
 
-            plt.savefig(fname=join(args.save_pred_path,img_name[0]))
+            plt.savefig(fname=join(join(args.save_pred_path, "image_plot"),img_name[0]))
+            
+        # save dict_metrichs in a json file
+        with open(join(args.save_pred_path, "sample_file.json"), "w") as file:
+            json.dump(dict_metrichs, file)
             
 
         bce_loss /= len(test_loader)
