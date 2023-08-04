@@ -1,10 +1,22 @@
 import torch
+from torchmetrics.classification import MulticlassF1Score, MulticlassJaccardIndex
 from dataset.dataset import MyDataset
 import tqdm
 from torch.utils.data import DataLoader
 from metrics.metric_tool import ConfuseMatrixMeter
 from models.change_classifier import ChangeClassifier
 import argparse
+from os.path import join
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
+import json
+
+MEAN = 0.45
+STD = 0.225
+
+def denormalize_img(img:np.array)->np.array:
+    return (img * STD) + MEAN
 
 def parse_arguments():
     # Argument Parser creation
@@ -15,20 +27,40 @@ def parse_arguments():
         "--datapath",
         type=str,
         help="data path",
-        default="/home/codegoni/aerial/WHU-CD-256/WHU-CD-256",
     )
     parser.add_argument(
         "--modelpath",
         type=str,
         help="model path",
     )
+    parser.add_argument(
+        "--save_pred_path",
+        type=str,
+        help="save predictions path",
+    )
 
     parsed_arguments = parser.parse_args()
     
     return parsed_arguments
 
-if __name__ == "__main__":
 
+def compose_mask(
+        image: np.ndarray,
+        mask: np.ndarray,
+        channel: int = 0,
+        alpha: float = 0.8,
+    ) -> np.ndarray:
+    if len(image.shape) < 3:
+        image = image[:,:,None]
+    if image.shape[2] == 1:
+        image = np.repeat(image, 3, axis=2)
+    res = image.copy()
+    res *= alpha
+    res[:,:,channel] += mask * (1 - alpha)
+    return res
+
+
+def main():
     # Parse arguments:
     args = parse_arguments()
 
@@ -37,7 +69,7 @@ if __name__ == "__main__":
 
     # Initialisation of the dataset
     data_path = args.datapath 
-    dataset = MyDataset(data_path, "test")
+    dataset = MyDataset(data_path, "data/test_totalSegmentor.txt", "test")
     test_loader = DataLoader(dataset, batch_size=1)
 
     # Initialisation of the model and print model stat
@@ -62,15 +94,20 @@ if __name__ == "__main__":
     # loop to evaluate the model and print the metrics
     bce_loss = 0.0
     criterion = torch.nn.BCELoss()
+    
+    # dict metrichs 
+    dict_metrichs = {}
 
     with torch.no_grad():
-        for (reference, testimg), mask in tqdm.tqdm(test_loader):
+        for data in tqdm.tqdm(test_loader):
+            reference = data["image"]
+            mask = data["mask"]
+            img_name = data["img_name"]
             reference = reference.to(device).float()
-            testimg = testimg.to(device).float()
             mask = mask.float()
 
             # pass refence and test in the model
-            generated_mask = model(reference, testimg).squeeze(1)
+            generated_mask = model(reference).squeeze(1)
             
             # compute the loss for the batch and backpropagate
             generated_mask = generated_mask.to("cpu")
@@ -82,6 +119,45 @@ if __name__ == "__main__":
             mask = mask.numpy()
             mask = mask.astype(int)
             tool_metric.update_cm(pr=bin_genmask, gt=mask)
+            
+            # update dict metrichs 
+            f1score = MulticlassF1Score(num_classes=2, average=None)
+            jaccardIndex = MulticlassJaccardIndex(num_classes=2, average=None)
+            dict_metrichs[img_name[0]] = (f1score(torch.from_numpy(bin_genmask), torch.from_numpy(mask))[1].tolist(), jaccardIndex(torch.from_numpy(bin_genmask), torch.from_numpy(mask))[1].tolist() )
+            
+            # save output masks
+            im = Image.fromarray((bin_genmask[0] * 255).astype(np.uint8))
+            im.save(join(join(args.save_pred_path, "output_mask"),img_name[0]))
+            
+
+            # Preparing the masks:
+            ct_to_plot = denormalize_img(reference[0].detach().cpu().permute(1,2,0).numpy())
+            gt_mask = compose_mask(ct_to_plot, mask[0], 2)
+            generated_mask = compose_mask(ct_to_plot, bin_genmask[0])
+            fp = np.maximum(bin_genmask[0] - mask[0], 0)
+            fn = np.maximum(mask[0] - bin_genmask[0], 0)
+            diff_mask = compose_mask(ct_to_plot, fp, 0, alpha=0.75)
+            diff_mask = compose_mask(diff_mask, fn, 1, alpha=0.8)
+            
+            # save prediction to folder
+            # TODO: check 
+            fig, axs = plt.subplots(2,2)
+            axs[0,0].imshow(ct_to_plot)
+            axs[0,0].set_title("CT scan")
+            axs[0,1].imshow(gt_mask,cmap="gray")
+            axs[0,1].set_title("GT mask")
+            axs[1,0].imshow(generated_mask,cmap="gray")
+            axs[1,0].set_title("Predicted mask")
+            axs[1,1].imshow(diff_mask,cmap="gray")
+            axs[1,1].set_title("Difference mask")
+            #
+
+            plt.savefig(fname=join(join(args.save_pred_path, "image_plot"),img_name[0]))
+            
+        # save dict_metrichs in a json file
+        with open(join(args.save_pred_path, "sample_file.json"), "w") as file:
+            json.dump(dict_metrichs, file)
+            
 
         bce_loss /= len(test_loader)
         print("Test summary")
@@ -90,3 +166,7 @@ if __name__ == "__main__":
 
         scores_dictionary = tool_metric.get_scores()
         print(scores_dictionary)
+
+
+if __name__ == "__main__":
+    main()

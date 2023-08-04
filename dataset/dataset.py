@@ -1,5 +1,5 @@
 from typing import List, Tuple
-from collections import Sized
+from collections.abc import Sized
 from os.path import join
 import albumentations as alb
 from torchvision.transforms import Normalize
@@ -15,89 +15,108 @@ class MyDataset(Dataset, Sized):
     def __init__(
         self,
         data_path: str,
+        txt_data: str,
         mode: str,
     ) -> None:
-        """
-        data_path: Folder containing the sub-folders:
-            "A" for test images,
-            "B" for ref images, 
-            "label" for the gt masks,
-            "list" containing the image list files ("train.txt", "test.txt", "eval.txt").
-        """
+    
         # Store the path data path + mode (train,val,test):
         self._mode = mode
-        self._A = join(data_path, "A")
-        self._B = join(data_path, "B")
-        self._label = join(data_path, "label")
+        self._img_path = join(data_path,"data")
+        self._mask_path = join(data_path,"seg")
 
         # In all the dirs, the files share the same names:
-        self._list_images = self._read_images_list(data_path)
+        self._list_images = self._read_images_list(txt_data)
+        #ritorna la lista di tutte le immagini
 
         # Initialize augmentations:
         if mode == 'train':
             self._augmentation = _create_shared_augmentation()
             self._aberration = _create_aberration_augmentation()
+        else:
+            self._resize_eval_images = _resize_eval_images()
         
         # Initialize normalization:
-        self._normalize = Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
+        self._normalize = Normalize(mean=[0.45],
+                                 std=[0.225])
 
+    def _imgname2maskname(self, img_name:str)->str:
+        if "data" in img_name:
+            return img_name.replace("data","seg")
+    
     def __getitem__(self, indx):
         # Current image set name:
         imgname = self._list_images[indx].strip('\n')
 
         # Loading the images:
-        x_ref = imread(join(self._A, imgname))
-        x_test = imread(join(self._B, imgname))
-        x_mask = _binarize(imread(join(self._label, imgname)))
+        x_img = imread(join(self._img_path, imgname))
+        x_mask = _binarize(imread(join(self._mask_path, self._imgname2maskname(imgname))))
 
         # Data augmentation in case of training:
         if self._mode == "train":
-            x_ref, x_test, x_mask = self._augment(x_ref, x_test, x_mask)
+            x_img, x_mask = self._augment(x_img, x_mask)
+        else:
+            x_img, x_mask = self._resize_eval(x_img, x_mask)
 
         # Trasform data from HWC to CWH:
-        x_ref, x_test, x_mask = self._to_tensors(x_ref, x_test, x_mask)
-
-        return (x_ref, x_test), x_mask
+        # x_img, x_test, x_mask = self._to_tensors(x_img, x_test, x_mask)
+        x_img, x_mask = self._to_tensors(np.expand_dims(x_img, axis=2),x_mask)
+        
+        return {"image":x_img.repeat(3,1,1),"mask":x_mask,"img_name":imgname}
 
     def __len__(self):
         return len(self._list_images)
 
-    def _read_images_list(self, data_path: str) -> List[str]:
-        images_list_file = join(data_path,'list', self._mode + ".txt")
-        with open(images_list_file, "r") as f:
+    def _read_images_list(self, txt_file: str) -> List[str]:
+        with open(txt_file, "r") as f:
             return f.readlines()
     
     def _augment(
-        self, x_ref: np.ndarray, x_test: np.ndarray, x_mask: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        self, x_img: np.ndarray, x_mask: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
         # First apply augmentations in equal manner to test/ref/x_mask:
-        transformed = self._augmentation(image=x_ref, image0=x_test, x_mask0=x_mask)
-        x_ref = transformed["image"]
-        x_test = transformed["image0"]
+        transformed = self._augmentation(image=x_img, x_mask0=x_mask)
+        x_img = transformed["image"]
         x_mask = transformed["x_mask0"]
 
         # Then apply augmentation to single test ref in different way:
-        x_ref = self._aberration(image=x_ref)["image"]
-        x_test = self._aberration(image=x_test)["image"]
+        x_img = self._aberration(image=x_img)["image"]
+        # x_test = self._aberration(image=x_test)["image"]
 
-        return x_ref, x_test, x_mask
+        return x_img, x_mask
+    
+    def _resize_eval(
+        self, x_img: np.ndarray, x_mask: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        # Resize image and mask:
+        transformed = self._resize_eval_images(image=x_img, x_mask0=x_mask)
+        x_img = transformed["image"]
+        x_mask = transformed["x_mask0"]
+
+        return x_img, x_mask
     
     def _to_tensors(
-        self, x_ref: np.ndarray, x_test: np.ndarray, x_mask: np.ndarray
+        self, x_img: np.ndarray, x_mask: np.ndarray
     ) -> Tuple[Tensor, Tensor, Tensor]:
         return (
-            self._normalize(torch.tensor(x_ref).permute(2, 0, 1)),
-            self._normalize(torch.tensor(x_test).permute(2, 0, 1)),
-            torch.tensor(x_mask),
+            self._normalize(torch.tensor(x_img).permute(2, 0, 1)),
+            torch.tensor(x_mask)
         )
 
 
 def _create_shared_augmentation():
     return alb.Compose(
         [
+            alb.Resize(256, 256),
             alb.Flip(p=0.5),
             alb.Rotate(limit=5, p=0.5),
+        ],
+        additional_targets={"image0": "image", "x_mask0": "mask"},
+    )
+
+def _resize_eval_images():
+    return alb.Compose(
+        [
+            alb.Resize(256, 256)
         ],
         additional_targets={"image0": "image", "x_mask0": "mask"},
     )

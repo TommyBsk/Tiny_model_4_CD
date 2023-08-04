@@ -3,7 +3,7 @@ import os
 import shutil
 
 
-import dataset.dataset as dtset
+from dataset.dataset import MyDataset
 import torch
 import numpy as np
 import random
@@ -11,6 +11,7 @@ from metrics.metric_tool import ConfuseMatrixMeter
 from models.change_classifier import ChangeClassifier as Model
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from matplotlib import pyplot as plt
 
 
 def parse_arguments():
@@ -78,16 +79,18 @@ def train(
 
     model = model.to(device)
 
+    train_image_list = []
+    val_image_list = []
+
     tool4metric = ConfuseMatrixMeter(n_class=2)
 
-    def evaluate(reference, testimg, mask):
+    def evaluate(reference, mask, image_list):
         # All the tensors on the device:
         reference = reference.to(device).float()
-        testimg = testimg.to(device).float()
         mask = mask.to(device).float()
 
         # Evaluating the model:
-        generated_mask = model(reference, testimg).squeeze(1)
+        generated_mask = model(reference).squeeze(1)
 
         # Loss gradient descend step:
         it_loss = criterion(generated_mask, mask)
@@ -98,6 +101,8 @@ def train(
         mask = mask.to("cpu").numpy().astype(int)
         tool4metric.update_cm(pr=bin_genmask, gt=mask)
 
+        # image_list.append([reference, mask, bin_genmask])
+
         return it_loss
 
     def training_phase(epc):
@@ -105,12 +110,14 @@ def train(
         print("Epoch {}".format(epc))
         model.train()
         epoch_loss = 0.0
-        for (reference, testimg), mask in dataset_train:
+        for data in dataset_train:
+            reference = data["image"]
+            mask = data["mask"]
             # Reset the gradients:
             optimizer.zero_grad()
 
             # Loss gradient descend step:
-            it_loss = evaluate(reference, testimg, mask)
+            it_loss = evaluate(reference, mask, train_image_list)
             it_loss.backward()
             optimizer.step()
 
@@ -152,9 +159,11 @@ def train(
         epoch_loss_eval = 0.0
         tool4metric.clear()
         with torch.no_grad():
-            for (reference, testimg), mask in dataset_val:
-                epoch_loss_eval += evaluate(reference,
-                                            testimg, mask).to("cpu").numpy()
+            for data in dataset_val:
+                reference = data["image"]
+                mask = data["mask"]
+                img_name = data["img_name"]
+                epoch_loss_eval += evaluate(reference, mask, val_image_list).to("cpu").numpy()
 
         epoch_loss_eval /= len(dataset_val)
         print("Validation phase summary")
@@ -181,6 +190,82 @@ def train(
         validation_phase(epc)
         # scheduler step
         scheduler.step()
+    #output_train_image(train_image_list, "/home/ramat/experiments/exp_tinyCD/exp136/train_image")
+    #output_train_image(val_image_list, "/home/ramat/experiments/exp_tinyCD/exp136/val_image")
+        
+def output_train_image(
+        image_list,
+        save_path
+):
+    for k in range(len(image_list)):
+        columns = 3
+        rows = 3
+        j = 0
+        fig = plt.figure(figsize=(12, 16))
+        for i in range(columns * rows)[::3]:
+            if j < len(image_list[k]):
+                img = image_list[k][0][j,0,:,:].squeeze().cpu()
+                col1 = fig.add_subplot(rows, columns, i + 1)
+                plt.imshow(img, cmap="gray")
+                col2 = fig.add_subplot(rows, columns, i + 2)
+                plt.imshow(image_list[k][1][j], cmap="gray")
+                col3 = fig.add_subplot(rows, columns, i + 3)
+                plt.imshow(image_list[k][2][j], cmap="gray")
+                j += 1
+                if i == 0:
+                    col1.title.set_text("Data")
+                    col2.title.set_text("Ground Truth")
+                    col3.title.set_text("Prediction")
+        plt.suptitle(f"Predictions", fontsize=16)
+        plt_out_pth = os.path.join(save_path, f"prediction_image_{k}.png")
+        plt.savefig(plt_out_pth, dpi=300)
+
+
+def output_test_image(
+    dataset_test,
+    model,
+    device,
+    logpath
+):
+    model = model.to(device)
+    model.eval()
+    k = 0
+    with torch.no_grad():
+        for data in dataset_test:
+            reference = data["image"]
+            mask = data["mask"]
+            # All the tensors on the device:
+            reference = reference.to(device).float()
+            mask = mask.to(device).float()
+
+            # Evaluating the model:
+            generated_mask = model(reference).squeeze(1)
+
+            # Binarize mask
+            bin_genmask = (generated_mask.to("cpu") >
+                        0.5).detach().numpy().astype(int)
+            mask = mask.to("cpu").numpy().astype(int)
+            columns = 3
+            rows = 3
+            j = 0
+            fig = plt.figure(figsize=(12, 16))
+            for i in range(columns * rows)[::3]:
+                img = reference[j,0,:,:].squeeze().cpu()
+                col1 = fig.add_subplot(rows, columns, i + 1)
+                plt.imshow(img, cmap="gray")
+                col2 = fig.add_subplot(rows, columns, i + 2)
+                plt.imshow(mask[j], cmap="gray")
+                col3 = fig.add_subplot(rows, columns, i + 3)
+                plt.imshow(bin_genmask[j], cmap="gray")
+                j += 1
+                if i == 0:
+                    col1.title.set_text("Data")
+                    col2.title.set_text("Ground Truth")
+                    col3.title.set_text("Prediction")
+            k = k+1
+            plt.suptitle(f"Predictions", fontsize=16)
+            plt_out_pth = os.path.join("/home/ramat/experiments/exp_tinyCD/exp136/prediction_image", f"prediction_image_{k}.png")
+            plt.savefig(plt_out_pth, dpi=300)
 
 
 def run():
@@ -190,6 +275,9 @@ def run():
     random.seed(42)
     np.random.seed(42)
 
+    # number of epochs 
+    epochs = 100
+
     # Parse arguments:
     args = parse_arguments()
 
@@ -197,10 +285,13 @@ def run():
     writer = SummaryWriter(log_dir=args.log_path)
 
     # Inizialitazion of dataset and dataloader:
-    trainingdata = dtset.MyDataset(args.datapath, "train")
-    validationdata = dtset.MyDataset(args.datapath, "val")
+    trainingdata = MyDataset(args.datapath, "data/train_totalSegmentor.txt", "train")
+    validationdata = MyDataset(args.datapath, "data/val_totalSegmentor.txt", "val")
+    testingdata = MyDataset("/home/ramat/data/images/test_data_binary", "data/test.txt", "val")
     data_loader_training = DataLoader(trainingdata, batch_size=8, shuffle=True)
     data_loader_val = DataLoader(validationdata, batch_size=8, shuffle=True)
+    data_loader_testing = DataLoader(testingdata, batch_size=3, shuffle=False)
+
 
     # device setting for training
     if torch.cuda.is_available():
@@ -256,11 +347,14 @@ def run():
         scheduler,
         args.log_path,
         writer,
-        epochs=100,
+        epochs=epochs,
         save_after=1,
         device=device
     )
     writer.close()
+    model = Model()
+    model.load_state_dict(torch.load(os.path.join(args.log_path, "model_{}.pth".format(epochs - 1))))
+    #output_test_image(data_loader_testing, model, device, os.path.join(args.log_path, "images"))
 
 
 if __name__ == "__main__":

@@ -69,28 +69,14 @@ class MixingMaskAttentionBlock(Module):
 
     def __init__(
         self,
-        ch_in: int,
-        ch_out: int,
         fin: List[int],
         fout: List[int],
-        generate_masked: bool = False,
     ):
         super().__init__()
-        self._mixing = MixingBlock(ch_in, ch_out)
         self._linear = PixelwiseLinear(fin, fout)
-        self._final_normalization = InstanceNorm2d(ch_out) if generate_masked else None
-        self._mixing_out = MixingBlock(ch_in, ch_out) if generate_masked else None
 
-    def forward(self, x: Tensor, y: Tensor) -> Tensor:
-        z_mix = self._mixing(x, y)
-        z = self._linear(z_mix)
-        z_mix_out = 0 if self._mixing_out is None else self._mixing_out(x, y)
-
-        return (
-            z
-            if self._final_normalization is None
-            else self._final_normalization(z_mix_out * z)
-        )
+    def forward(self, x: Tensor) -> Tensor:
+        return  self._linear(x)
 
 
 class UpMask(Module):
