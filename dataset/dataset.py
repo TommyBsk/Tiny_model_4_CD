@@ -3,12 +3,16 @@ from collections.abc import Sized
 from os.path import join
 import albumentations as alb
 from torchvision.transforms import Normalize
-
+from torchvision.utils import save_image
 import numpy as np
 import torch
 from matplotlib.image import imread
+# from cv2 import imread
 from torch.utils.data import Dataset
 from torch import Tensor
+from utils.mask_deformation import apply_deformation
+import random
+from PIL import Image 
 
 
 class MyDataset(Dataset, Sized):
@@ -50,18 +54,28 @@ class MyDataset(Dataset, Sized):
         # Loading the images:
         x_img = imread(join(self._img_path, imgname))
         x_mask = _binarize(imread(join(self._mask_path, self._imgname2maskname(imgname))))
+        
+        # Create deformed image and mask for 30% of the image
+        if random.uniform(0,1)>0.5:
+            x_deformed_image, x_deformed_mask = apply_deformation(x_img, x_mask) 
+        else: 
+            x_deformed_image, x_deformed_mask = x_img, x_mask
+        # create gt for change detection
+        x_mask_cd = (x_deformed_mask + x_mask) % 2
 
         # Data augmentation in case of training:
         if self._mode == "train":
-            x_img, x_mask = self._augment(x_img, x_mask)
+            x_img, x_deformed_image, x_mask_cd = self._augment(x_img, x_deformed_image, x_mask_cd)
         else:
-            x_img, x_mask = self._resize_eval(x_img, x_mask)
+            x_img, x_deformed_image, x_mask_cd = self._resize_eval(x_img, x_deformed_image, x_mask_cd)
 
         # Trasform data from HWC to CWH:
-        # x_img, x_test, x_mask = self._to_tensors(x_img, x_test, x_mask)
-        x_img, x_mask = self._to_tensors(np.expand_dims(x_img, axis=2),x_mask)
+        x_img, x_deformed_image, x_mask_cd = self._to_tensors(np.expand_dims(x_img, axis=2), np.expand_dims(x_deformed_image, axis=2), x_mask_cd)
+        # save_image(x_img_t.float(),"/home/ramat/code/Tiny_CD/Tiny_model_4_CD/utils/immagini/" + imgname + "img.jpeg")
+        # save_image(x_deformed_image_t.float(),"/home/ramat/code/Tiny_CD/Tiny_model_4_CD/utils/immagini/" + imgname + "defomred_img.jpeg")
+        # save_image(x_mask_cd_t.float(),"/home/ramat/code/Tiny_CD/Tiny_model_4_CD/utils/immagini/" + imgname + "mask.jpeg")
         
-        return {"image":x_img.repeat(3,1,1),"mask":x_mask,"img_name":imgname}
+        return {"image":x_img.repeat(3,1,1), "deformed_image":x_deformed_image.repeat(3,1,1) ,"mask":x_mask_cd,"img_name":imgname}
 
     def __len__(self):
         return len(self._list_images)
@@ -71,35 +85,38 @@ class MyDataset(Dataset, Sized):
             return f.readlines()
     
     def _augment(
-        self, x_img: np.ndarray, x_mask: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, x_ref: np.ndarray, x_test: np.ndarray, x_mask: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         # First apply augmentations in equal manner to test/ref/x_mask:
-        transformed = self._augmentation(image=x_img, x_mask0=x_mask)
-        x_img = transformed["image"]
+        transformed = self._augmentation(image=x_ref, image0=x_test, x_mask0=x_mask)
+        x_ref = transformed["image"]
+        x_test = transformed["image0"]
         x_mask = transformed["x_mask0"]
 
         # Then apply augmentation to single test ref in different way:
-        x_img = self._aberration(image=x_img)["image"]
-        # x_test = self._aberration(image=x_test)["image"]
+        x_ref = self._aberration(image=x_ref)["image"]
+        x_test = self._aberration(image=x_test)["image"]
 
-        return x_img, x_mask
+        return x_ref, x_test, x_mask
     
     def _resize_eval(
-        self, x_img: np.ndarray, x_mask: np.ndarray
+        self, x_img: np.ndarray,x_test:np.ndarray, x_mask: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
         # Resize image and mask:
-        transformed = self._resize_eval_images(image=x_img, x_mask0=x_mask)
+        transformed = self._resize_eval_images(image=x_img, image0=x_test, x_mask0=x_mask)
         x_img = transformed["image"]
+        x_test = transformed["image0"]
         x_mask = transformed["x_mask0"]
 
-        return x_img, x_mask
+        return x_img, x_test, x_mask
     
     def _to_tensors(
-        self, x_img: np.ndarray, x_mask: np.ndarray
+        self, x_ref: np.ndarray, x_test: np.ndarray, x_mask: np.ndarray
     ) -> Tuple[Tensor, Tensor, Tensor]:
         return (
-            self._normalize(torch.tensor(x_img).permute(2, 0, 1)),
-            torch.tensor(x_mask)
+            self._normalize(torch.tensor(x_ref).permute(2, 0, 1)),
+            self._normalize(torch.tensor(x_test).permute(2, 0, 1)),
+            torch.tensor(x_mask),
         )
 
 
@@ -124,9 +141,9 @@ def _resize_eval_images():
 
 def _create_aberration_augmentation():
     return alb.Compose([
-        alb.RandomBrightnessContrast(
-            brightness_limit=0.2, contrast_limit=0.2, p=0.5
-        ),
+        # alb.RandomBrightnessContrast(
+        #     brightness_limit=0.2, contrast_limit=0.2, p=0.5
+        # ),
         alb.GaussianBlur(blur_limit=[3, 5], p=0.5),
     ])
 

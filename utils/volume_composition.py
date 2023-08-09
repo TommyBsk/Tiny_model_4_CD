@@ -14,12 +14,17 @@ def predict_3_volume(x_volume,y_volume,z_volume):
     # profondità x h x w asse z
     
     x_volume = np.moveaxis(x_volume, 0, -1)
+    x_volume = x_volume[:,:,:512]
     y_volume = np.moveaxis(y_volume, 0, -1)
     z_volume = np.moveaxis(z_volume, 0, -1)
     
-    resize_x = alb.Resize(185, 185)
-    resize_y = alb.Resize(185, 218) 
-    resize_z = alb.Resize(185, 218)
+    # resize_x = alb.Resize(185, 185)
+    # resize_y = alb.Resize(185, 218) 
+    # resize_z = alb.Resize(185, 218)
+    
+    resize_x = alb.Resize(512, 512)
+    resize_y = alb.Resize(512, 512) 
+    resize_z = alb.Resize(512, 512)
     
     x_volume = resize_x(image=x_volume)["image"]
     y_volume = resize_y(image=y_volume)["image"]
@@ -29,9 +34,9 @@ def predict_3_volume(x_volume,y_volume,z_volume):
     z_volume = np.transpose(z_volume,(2,0,1))
     
 
-    save_data_to_nrrd(x_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_model100/x_vol__def.nrrd")
-    save_data_to_nrrd(y_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_model100/y_vol__def.nrrd")
-    save_data_to_nrrd(z_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_model100/z_vol__def.nrrd")
+    save_data_to_nrrd(x_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/x_vol.nrrd")
+    save_data_to_nrrd(y_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/y_vol.nrrd")
+    save_data_to_nrrd(z_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/z_vol.nrrd")
  
     
     volume = x_volume + y_volume + z_volume
@@ -67,9 +72,9 @@ def save_data_to_hdf5(data, file_path, internal_path="/data", chunking=True):
 
 
 if __name__ == '__main__':
-    x_volume = load_volume("/home/ramat/experiments/exp_tinyCD/exp141/test_model100/output_mask", "x")
-    y_volume = load_volume("/home/ramat/experiments/exp_tinyCD/exp141/test_model100/output_mask", "y")
-    z_volume = load_volume("/home/ramat/experiments/exp_tinyCD/exp141/test_model100/output_mask", "z")
+    x_volume = load_volume("/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/output_mask", "x")
+    y_volume = load_volume("/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/output_mask", "y")
+    z_volume = load_volume("/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/output_mask", "z")
     composed_volume = predict_3_volume(x_volume, y_volume, z_volume)
-    #save_data_to_hdf5(composed_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_model100/3dmodel.h5")
-    save_data_to_nrrd(composed_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_model100/3dmodel_def.nrrd")
+    #save_data_to_hdf5(composed_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/3dmodel.h5")
+    save_data_to_nrrd(composed_volume, "/home/ramat/experiments/exp_tinyCD/exp141/test_imgAneurisma/3dmodel.nrrd")

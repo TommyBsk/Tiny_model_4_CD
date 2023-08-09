@@ -84,13 +84,14 @@ def train(
 
     tool4metric = ConfuseMatrixMeter(n_class=2)
 
-    def evaluate(reference, mask, image_list):
+    def evaluate(reference, testimg, mask):
         # All the tensors on the device:
         reference = reference.to(device).float()
+        testimg = testimg.to(device).float()
         mask = mask.to(device).float()
 
         # Evaluating the model:
-        generated_mask = model(reference).squeeze(1)
+        generated_mask = model(reference, testimg).squeeze(1)
 
         # Loss gradient descend step:
         it_loss = criterion(generated_mask, mask)
@@ -101,8 +102,6 @@ def train(
         mask = mask.to("cpu").numpy().astype(int)
         tool4metric.update_cm(pr=bin_genmask, gt=mask)
 
-        # image_list.append([reference, mask, bin_genmask])
-
         return it_loss
 
     def training_phase(epc):
@@ -112,12 +111,13 @@ def train(
         epoch_loss = 0.0
         for data in dataset_train:
             reference = data["image"]
+            testimg = data["deformed_image"]
             mask = data["mask"]
             # Reset the gradients:
             optimizer.zero_grad()
 
             # Loss gradient descend step:
-            it_loss = evaluate(reference, mask, train_image_list)
+            it_loss = evaluate(reference, testimg, mask)
             it_loss.backward()
             optimizer.step()
 
@@ -161,9 +161,11 @@ def train(
         with torch.no_grad():
             for data in dataset_val:
                 reference = data["image"]
+                testimg = data["deformed_image"]
                 mask = data["mask"]
                 img_name = data["img_name"]
-                epoch_loss_eval += evaluate(reference, mask, val_image_list).to("cpu").numpy()
+                epoch_loss_eval += evaluate(reference,
+                                            testimg, mask).to("cpu").numpy()
 
         epoch_loss_eval /= len(dataset_val)
         print("Validation phase summary")
@@ -190,8 +192,6 @@ def train(
         validation_phase(epc)
         # scheduler step
         scheduler.step()
-    #output_train_image(train_image_list, "/home/ramat/experiments/exp_tinyCD/exp136/train_image")
-    #output_train_image(val_image_list, "/home/ramat/experiments/exp_tinyCD/exp136/val_image")
         
 def output_train_image(
         image_list,
@@ -276,7 +276,7 @@ def run():
     np.random.seed(42)
 
     # number of epochs 
-    epochs = 100
+    epochs = 30
 
     # Parse arguments:
     args = parse_arguments()
@@ -285,12 +285,12 @@ def run():
     writer = SummaryWriter(log_dir=args.log_path)
 
     # Inizialitazion of dataset and dataloader:
-    trainingdata = MyDataset(args.datapath, "data/train_totalSegmentor.txt", "train")
-    validationdata = MyDataset(args.datapath, "data/val_totalSegmentor.txt", "val")
-    testingdata = MyDataset("/home/ramat/data/images/test_data_binary", "data/test.txt", "val")
+    trainingdata = MyDataset(args.datapath, "data/train_totalSegmentor_abdomen.txt", "train")
+    validationdata = MyDataset(args.datapath, "data/val_totalSegmentor_abdomen.txt", "val")
+   # testingdata = MyDataset("/home/ramat/data/images/test_data_binary", "data/test.txt", "val")
     data_loader_training = DataLoader(trainingdata, batch_size=8, shuffle=True)
     data_loader_val = DataLoader(validationdata, batch_size=8, shuffle=True)
-    data_loader_testing = DataLoader(testingdata, batch_size=3, shuffle=False)
+    # data_loader_testing = DataLoader(testingdata, batch_size=3, shuffle=False)
 
 
     # device setting for training

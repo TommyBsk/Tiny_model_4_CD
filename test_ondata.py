@@ -69,7 +69,7 @@ def main():
 
     # Initialisation of the dataset
     data_path = args.datapath 
-    dataset = MyDataset(data_path, "data/test_totalSegmentor.txt", "test")
+    dataset = MyDataset(data_path, "data/test_totalSegmentor_filtered.txt", "test")
     test_loader = DataLoader(dataset, batch_size=1)
 
     # Initialisation of the model and print model stat

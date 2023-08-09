@@ -1,6 +1,6 @@
 from typing import List
 import torchvision
-from models.layers import MixingMaskAttentionBlock, PixelwiseLinear, UpMask
+from models.layers import MixingMaskAttentionBlock, PixelwiseLinear, UpMask, MixingBlock
 from torch import Tensor
 from torch.nn import Module, ModuleList, Sigmoid
 
@@ -21,12 +21,12 @@ class ChangeClassifier(Module):
         )
 
         # Initialize mixing blocks:
-        self._first_mix = PixelwiseLinear([3, 10, 5], [10, 5, 1])
+        self._first_mix = MixingMaskAttentionBlock(6, 3, [3, 10, 5], [10, 5, 1])
         self._mixing_mask = ModuleList(
             [
-                PixelwiseLinear([24, 12, 6], [12, 6, 1]),
-                PixelwiseLinear([32, 16, 8], [16, 8, 1]),
-                PixelwiseLinear([56], [56]),
+                MixingMaskAttentionBlock(48, 24, [24, 12, 6], [12, 6, 1]),
+                MixingMaskAttentionBlock(64, 32, [32, 16, 8], [16, 8, 1]),
+                MixingBlock(112, 56),
             ]
         )
 
@@ -42,17 +42,17 @@ class ChangeClassifier(Module):
         # Final classification layer:
         self._classify = PixelwiseLinear([32, 16, 8], [16, 8, 1], Sigmoid())
 
-    def forward(self, x: Tensor) -> Tensor:
-        features = self._encode(x)
+    def forward(self, ref: Tensor, test: Tensor) -> Tensor:
+        features = self._encode(ref, test)
         latents = self._decode(features)
         return self._classify(latents)
 
-    def _encode(self, x) -> List[Tensor]:
-        features = [self._first_mix(x)]
+    def _encode(self, ref, test) -> List[Tensor]:
+        features = [self._first_mix(ref, test)]
         for num, layer in enumerate(self._backbone):
-            x = layer(x)
+            ref, test = layer(ref), layer(test)
             if num != 0:
-                features.append(self._mixing_mask[num - 1](x))
+                features.append(self._mixing_mask[num - 1](ref, test))
         return features
 
     def _decode(self, features) -> Tensor:
