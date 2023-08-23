@@ -69,7 +69,7 @@ def apply_deformation(image, mask):
     return deform_image(src_img=image, src_mask=mask, point=deformation_point)
 
 def clippig_bound(value_to_clip,upper_bound):
-    return np.clip(value_to_clip,0,upper_bound)
+    return np.clip(value_to_clip,0,upper_bound - 1)
 
 
     

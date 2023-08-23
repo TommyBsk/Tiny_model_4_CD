@@ -102,6 +102,8 @@ def train(
         mask = mask.to("cpu").numpy().astype(int)
         tool4metric.update_cm(pr=bin_genmask, gt=mask)
 
+        # image_list.append([reference, mask, bin_genmask])
+
         return it_loss
 
     def training_phase(epc):
@@ -192,6 +194,8 @@ def train(
         validation_phase(epc)
         # scheduler step
         scheduler.step()
+    #output_train_image(train_image_list, "/home/ramat/experiments/exp_tinyCD/exp136/train_image")
+    #output_train_image(val_image_list, "/home/ramat/experiments/exp_tinyCD/exp136/val_image")
         
 def output_train_image(
         image_list,
@@ -276,7 +280,7 @@ def run():
     np.random.seed(42)
 
     # number of epochs 
-    epochs = 30
+    epochs = 100
 
     # Parse arguments:
     args = parse_arguments()
@@ -287,10 +291,10 @@ def run():
     # Inizialitazion of dataset and dataloader:
     trainingdata = MyDataset(args.datapath, "data/train_totalSegmentor_abdomen.txt", "train")
     validationdata = MyDataset(args.datapath, "data/val_totalSegmentor_abdomen.txt", "val")
-   # testingdata = MyDataset("/home/ramat/data/images/test_data_binary", "data/test.txt", "val")
+    #testingdata = MyDataset("/home/ramat/data/images/test_data_binary", "data/test.txt", "val")
     data_loader_training = DataLoader(trainingdata, batch_size=8, shuffle=True)
     data_loader_val = DataLoader(validationdata, batch_size=8, shuffle=True)
-    # data_loader_testing = DataLoader(testingdata, batch_size=3, shuffle=False)
+    #data_loader_testing = DataLoader(testingdata, batch_size=3, shuffle=False)
 
 
     # device setting for training
