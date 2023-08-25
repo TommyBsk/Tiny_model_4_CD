@@ -69,7 +69,7 @@ def main():
 
     # Initialisation of the dataset
     data_path = args.datapath 
-    dataset = MyDataset(data_path, "data/test_totalSegmentor_filtered.txt", "test")
+    dataset = MyDataset(data_path, "data/test_totalSegmentor_abdomen_filtered.txt", "test")
     test_loader = DataLoader(dataset, batch_size=1)
 
     # Initialisation of the model and print model stat
@@ -102,12 +102,14 @@ def main():
         for data in tqdm.tqdm(test_loader):
             reference = data["image"]
             mask = data["mask"]
+            testimg = data["deformed_image"]
             img_name = data["img_name"]
             reference = reference.to(device).float()
+            testimg = testimg.to(device).float()
             mask = mask.float()
 
             # pass refence and test in the model
-            generated_mask = model(reference).squeeze(1)
+            generated_mask = model(reference, testimg).squeeze(1)
             
             # compute the loss for the batch and backpropagate
             generated_mask = generated_mask.to("cpu")
@@ -132,6 +134,7 @@ def main():
 
             # Preparing the masks:
             ct_to_plot = denormalize_img(reference[0].detach().cpu().permute(1,2,0).numpy())
+            testimg_to_plot = denormalize_img(testimg[0].detach().cpu().permute(1,2,0).numpy())
             gt_mask = compose_mask(ct_to_plot, mask[0], 2)
             generated_mask = compose_mask(ct_to_plot, bin_genmask[0])
             fp = np.maximum(bin_genmask[0] - mask[0], 0)
@@ -148,8 +151,8 @@ def main():
             axs[0,1].set_title("GT mask")
             axs[1,0].imshow(generated_mask,cmap="gray")
             axs[1,0].set_title("Predicted mask")
-            axs[1,1].imshow(diff_mask,cmap="gray")
-            axs[1,1].set_title("Difference mask")
+            axs[1,1].imshow(testimg_to_plot,cmap="gray")
+            axs[1,1].set_title("test image")
             #
 
             plt.savefig(fname=join(join(args.save_pred_path, "image_plot"),img_name[0]))
