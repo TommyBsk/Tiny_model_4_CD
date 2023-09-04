@@ -62,16 +62,23 @@ def deform_image(src_img, src_mask, point, radius_lower_boud=25, radius_upper_bo
     return deformed_image, deformed_mask
 
 def find_center_of_gravity(mask):
-    center = [int(np.average(indices)) for indices in np.where(mask >= 255) ]
+    center = [np.average(indices) for indices in np.where(mask >= 255) ]
+    if math.isnan(center[0]) or math.isnan(center[1]):
+        return None
     return center
 
 def create_circle(img, mask):
     center_point = find_center_of_gravity(mask)
+    if center_point is None:
+        return np.asarray(img)
     center_point = (center_point[1], center_point[0])
     center_point1 = (center_point[0] + 6, center_point[1])
-    modified_img = cv.circle(img, center_point, 3, (255,0,0),thickness=1)
-    modified_img = cv.circle(modified_img, center_point1, 3, (255,0,0),thickness=1)
-    return modified_img
+    if random.uniform(0,1)>0.5:
+        modified_img = cv.circle(img, center_point, 3, (255,0,0),thickness=1)
+        modified_img = cv.circle(modified_img, center_point1, 3, (255,0,0),thickness=1)
+    else:
+        modified_img = cv.circle(img, center_point, 4, (255,0,0),thickness=1)
+    return np.asarray(modified_img)
 
 def apply_deformation(image, mask):
     deformation_point = find_deformation_point(mask)

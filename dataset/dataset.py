@@ -10,7 +10,7 @@ from matplotlib.image import imread
 # from cv2 import imread
 from torch.utils.data import Dataset
 from torch import Tensor
-from utils.mask_deformation import apply_deformation
+from utils.mask_deformation import apply_deformation, create_circle
 import random
 from PIL import Image 
 
@@ -55,11 +55,14 @@ class MyDataset(Dataset, Sized):
         x_img = imread(join(self._img_path, imgname))
         x_mask = _binarize(imread(join(self._mask_path, self._imgname2maskname(imgname))))
         
-        # Create deformed image and mask for 30% of the image
+        # Create deformed image and mask for 50% of the image
         if random.uniform(0,1)>0.5:
             x_deformed_image, x_deformed_mask = apply_deformation(x_img, x_mask) 
         else: 
             x_deformed_image, x_deformed_mask = x_img, x_mask
+        # create prothesis in 50% of images:
+        if random.uniform(0,1)>0.5:
+            x_deformed_image = create_circle(x_deformed_image, x_deformed_mask) 
         # create gt for change detection
         x_mask_cd = (x_deformed_mask + x_mask) % 2
 
